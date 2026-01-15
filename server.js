@@ -1,9 +1,17 @@
 const express = require("express");
 const http = require("http");
+const path = require("path");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
+
+// 🔴 GARANTE QUE / FUNCIONA NO RENDER
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+// Arquivos estáticos (index.html, js, css, etc)
 app.use(express.static(__dirname));
 
 const io = new Server(server, {
@@ -13,11 +21,12 @@ const io = new Server(server, {
   }
 });
 
-// ESTADO GLOBAL
+// ================= ESTADO GLOBAL =================
 let players = {};
 let blocks = [];
 let messages = [];
 
+// ================= SOCKET.IO =================
 io.on("connection", (socket) => {
   console.log("✅ Jogador conectado:", socket.id);
 
@@ -25,7 +34,7 @@ io.on("connection", (socket) => {
   players[socket.id] = {
     id: socket.id,
     x: 0,
-    y: 0,
+    y: 1,
     z: 0,
     rotation: 0,
     username: "Player",
@@ -134,9 +143,8 @@ io.on("connection", (socket) => {
   });
 });
 
-// PORTA DINÂMICA (RAILWAY)
+// ================= PORTA (RENDER) =================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log("Servidor online na porta", PORT);
+  console.log("🚀 Servidor online na porta", PORT);
 });
-
