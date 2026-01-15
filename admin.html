@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Painel Admin</title>
+<script src="/socket.io/socket.io.js"></script>
+
+<style>
+body{
+background:#111;color:#fff;
+font-family:Arial;padding:20px
+}
+input,button{
+padding:8px;margin:5px;
+border:none;border-radius:5px
+}
+button{cursor:pointer}
+#log{
+margin-top:15px;
+background:#000;
+padding:10px;
+height:200px;
+overflow:auto;
+font-size:13px
+}
+.hidden{display:none}
+</style>
+</head>
+
+<body>
+
+<h2>🌐 Painel Admin</h2>
+
+<div id="auth">
+<input id="key" placeholder="Admin Key">
+<button onclick="auth()">Entrar</button>
+</div>
+
+<div id="panel" class="hidden">
+<h3>Comandos</h3>
+
+<input id="msg" placeholder="Mensagem global">
+<button onclick="sendMsg()">Enviar</button><br>
+
+<button onclick="resetWorld()">♻ Resetar Mundo</button>
+<button onclick="resetPlayers()">♻ Resetar Players</button>
+
+<div id="log"></div>
+</div>
+
+<script>
+const socket = io();
+
+function log(t){
+const d=document.createElement("div");
+d.textContent=t;
+logDiv.appendChild(d);
+logDiv.scrollTop=logDiv.scrollHeight;
+}
+
+const logDiv=document.getElementById("log");
+
+function auth(){
+socket.emit("adminAuth", key.value);
+}
+
+socket.on("adminAuthSuccess",()=>{
+authDiv.style.display="none";
+panel.classList.remove("hidden");
+log("✅ Admin autenticado");
+});
+
+socket.on("adminAuthFail",()=>{
+alert("❌ Chave errada");
+});
+
+function sendMsg(){
+if(!msg.value.trim())return;
+socket.emit("adminMessage",msg.value);
+log("📢 Mensagem enviada");
+msg.value="";
+}
+
+function resetWorld(){
+socket.emit("resetWorld");
+log("♻ Mundo resetado");
+}
+
+function resetPlayers(){
+socket.emit("resetPlayers");
+log("♻ Players resetados");
+}
+
+socket.on("worldReset",()=>log("🌍 Mundo reiniciado"));
+socket.on("playersReset",()=>log("👥 Players resetados"));
+</script>
+
+</body>
+</html>
