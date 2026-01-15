@@ -25,14 +25,21 @@ let messages = [];
 io.on("connection", (socket) => {
   console.log("✅ Conectado:", socket.id);
 
-  players[socket.id] = {
-    id: socket.id,
-    x: 0, y: 1, z: 0,
-    rotation: 0,
-    username: "Player",
-    isAdmin: false,
-    color: 0x00ff00
-  };
+players[socket.id] = {
+  id: socket.id,
+  x: 0,
+  y: 1,
+  z: 0,
+  rotation: 0,
+  username: "Player",
+  skinColor: 0xFFFF00,
+  torsoColor: 0x0000FF,
+  legsColor: 0x00FF00,
+  animation: "idle",
+  walking: false,
+  velocityY: 0,
+  isAdmin: false
+};
 
   socket.emit("init", { id: socket.id, players, blocks, messages });
   socket.broadcast.emit("playerJoined", players[socket.id]);
@@ -126,3 +133,4 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("🚀 Online na porta", PORT);
 });
+
