@@ -3,22 +3,21 @@ const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
 
+const ADMIN_KEY = "1234"; // 🔐 MUDA ISSO
+
 const app = express();
 const server = http.createServer(app);
 
-// 🔴 GARANTE QUE / FUNCIONA NO RENDER
+// rota principal
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// Arquivos estáticos (index.html, js, css, etc)
+// arquivos estáticos
 app.use(express.static(__dirname));
 
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 // ================= ESTADO GLOBAL =================
@@ -26,27 +25,18 @@ let players = {};
 let blocks = [];
 let messages = [];
 
-// ================= SOCKET.IO =================
+// ================= SOCKET =================
 io.on("connection", (socket) => {
-  console.log("✅ Jogador conectado:", socket.id);
+  console.log("✅ Conectado:", socket.id);
 
-  // Criar player
   players[socket.id] = {
     id: socket.id,
-    x: 0,
-    y: 1,
-    z: 0,
+    x: 0, y: 1, z: 0,
     rotation: 0,
     username: "Player",
-    skinColor: 0xFFFF00,
-    torsoColor: 0x0000FF,
-    legsColor: 0x00FF00,
-    animation: "idle",
-    walking: false,
-    velocityY: 0
+    animation: "idle"
   };
 
-  // Enviar estado inicial
   socket.emit("init", {
     id: socket.id,
     players,
@@ -56,95 +46,70 @@ io.on("connection", (socket) => {
 
   socket.broadcast.emit("playerJoined", players[socket.id]);
 
-  // MOVIMENTO
   socket.on("update", (data) => {
     if (!players[socket.id]) return;
-
     Object.assign(players[socket.id], data);
-
-    socket.broadcast.emit("playerMoved", {
-      id: socket.id,
-      ...data
-    });
+    socket.broadcast.emit("playerMoved", { id: socket.id, ...data });
   });
 
-  // ANIMAÇÃO
-  socket.on("updateAnimation", (data) => {
-    if (!players[socket.id]) return;
-
-    players[socket.id].animation = data.animation;
-    players[socket.id].walking = data.walking;
-    players[socket.id].velocityY = data.velocityY;
-
-    socket.broadcast.emit("playerAnimated", {
-      id: socket.id,
-      ...data
-    });
-  });
-
-  // CORES
-  socket.on("updateColor", ({ part, color }) => {
-    if (!players[socket.id]) return;
-
-    players[socket.id][part] = color;
-
-    io.emit("playerColorChanged", {
-      id: socket.id,
-      part,
-      color
-    });
-  });
-
-  // USERNAME
-  socket.on("updateUsername", (name) => {
-    if (!players[socket.id]) return;
-
-    const oldName = players[socket.id].username;
-    players[socket.id].username = name;
-
-    io.emit("playerRenamed", {
-      id: socket.id,
-      oldName,
-      username: name
-    });
-  });
-
-  // CHAT
   socket.on("sendMessage", ({ text }) => {
     const msg = {
       id: socket.id,
       username: players[socket.id]?.username || "Player",
-      text,
-      time: new Date().toLocaleTimeString()
+      text
     };
-
     messages.push(msg);
     if (messages.length > 50) messages.shift();
-
     io.emit("receiveMessage", msg);
   });
 
-  // BUILD
-  socket.on("placeBlock", (block) => {
-    const blockData = {
-      id: Date.now().toString(36) + Math.random().toString(36),
-      ...block
-    };
-
-    blocks.push(blockData);
-    io.emit("blockPlaced", blockData);
+  // ================= ADMIN =================
+  socket.on("adminAuth", (key) => {
+    if (key === ADMIN_KEY) {
+      socket.isAdmin = true;
+      socket.emit("adminAuthSuccess");
+      console.log("🔐 Admin autenticado");
+    } else {
+      socket.emit("adminAuthFail");
+    }
   });
 
-  // DISCONNECT
+  socket.on("adminMessage", (text) => {
+    if (!socket.isAdmin) return;
+    io.emit("receiveMessage", {
+      id: "ADMIN",
+      username: "🌐 SERVIDOR",
+      text
+    });
+  });
+
+  socket.on("resetWorld", () => {
+    if (!socket.isAdmin) return;
+    blocks = [];
+    messages = [];
+    io.emit("worldReset");
+    console.log("♻ Mundo resetado");
+  });
+
+  socket.on("resetPlayers", () => {
+    if (!socket.isAdmin) return;
+    for (const id in players) {
+      players[id].x = 0;
+      players[id].y = 1;
+      players[id].z = 0;
+    }
+    io.emit("playersReset");
+    console.log("♻ Players resetados");
+  });
+
   socket.on("disconnect", () => {
-    console.log("❌ Jogador saiu:", socket.id);
     delete players[socket.id];
     io.emit("playerLeft", socket.id);
   });
 });
 
-// ================= PORTA (RENDER) =================
+// ================= PORTA =================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log("🚀 Servidor online na porta", PORT);
+  console.log("🚀 Online na porta", PORT);
 });
