@@ -64,15 +64,23 @@ io.on("connection", (socket) => {
   });
 
   // ================= ADMIN =================
-  socket.on("adminAuth", (key) => {
-    if (key === ADMIN_KEY) {
-      socket.isAdmin = true;
-      socket.emit("adminAuthSuccess");
-      console.log("🔐 Admin autenticado");
-    } else {
-      socket.emit("adminAuthFail");
+socket.on("adminAuth", (key) => {
+  if (key === ADMIN_KEY) {
+    socket.isAdmin = true;
+
+    // se existir player normal, remove
+    if (players[socket.id]) {
+      delete players[socket.id];
+      io.emit("playerLeft", socket.id);
     }
-  });
+
+    socket.emit("adminAuthSuccess");
+    console.log("🔐 Admin autenticado:", socket.id);
+  } else {
+    socket.emit("adminAuthFail");
+  }
+});
+
 
   socket.on("adminMessage", (text) => {
     if (!socket.isAdmin) return;
@@ -113,4 +121,5 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("🚀 Online na porta", PORT);
 });
+
 
