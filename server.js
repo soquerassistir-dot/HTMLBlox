@@ -65,14 +65,21 @@ players[socket.id] = {
       return;
     }
 
-    players[socket.id] = {
-      id: socket.id,
-      x: 0, y: 1, z: 0,
-      rotation: 0,
-      username: "Admin",
-      isAdmin: true,
-      color: 0xffffff
-    };
+players[socket.id] = {
+  id: socket.id,
+  x: 0,
+  y: 1,
+  z: 0,
+  rotation: 0,
+  username: "Admin",
+  skinColor: 0xFFFFFF,
+  torsoColor: 0xFFFFFF,
+  legsColor: 0xFFFFFF,
+  animation: "idle",
+  walking: false,
+  velocityY: 0,
+  isAdmin: true
+};
 
     socket.isAdmin = true;
 
@@ -133,4 +140,5 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("🚀 Online na porta", PORT);
 });
+
 
