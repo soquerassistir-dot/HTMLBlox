@@ -3,29 +3,25 @@ const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
 
-const ADMIN_KEY = "68@nisRY"; // 🔐 MUDA ISSO
+const ADMIN_KEY = "68@nisRY";
 
 const app = express();
 const server = http.createServer(app);
 
-// rota principal
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// arquivos estáticos
 app.use(express.static(__dirname));
 
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// ================= ESTADO GLOBAL =================
 let players = {};
 let blocks = [];
 let messages = [];
 
-// ================= SOCKET =================
 io.on("connection", (socket) => {
   console.log("✅ Conectado:", socket.id);
 
@@ -34,16 +30,11 @@ io.on("connection", (socket) => {
     x: 0, y: 1, z: 0,
     rotation: 0,
     username: "Player",
-    animation: "idle"
+    isAdmin: false,
+    color: 0x00ff00
   };
 
-  socket.emit("init", {
-    id: socket.id,
-    players,
-    blocks,
-    messages
-  });
-
+  socket.emit("init", { id: socket.id, players, blocks, messages });
   socket.broadcast.emit("playerJoined", players[socket.id]);
 
   socket.on("update", (data) => {
@@ -53,40 +44,57 @@ io.on("connection", (socket) => {
   });
 
   socket.on("sendMessage", ({ text }) => {
-    const msg = {
+    io.emit("receiveMessage", {
       id: socket.id,
       username: players[socket.id]?.username || "Player",
       text
-    };
-    messages.push(msg);
-    if (messages.length > 50) messages.shift();
-    io.emit("receiveMessage", msg);
+    });
   });
 
-  // ================= ADMIN =================
-socket.on("adminAuth", (key) => {
-  if (key === ADMIN_KEY) {
-    socket.isAdmin = true;
-
-    // se existir player normal, remove
-    if (players[socket.id]) {
-      delete players[socket.id];
-      io.emit("playerLeft", socket.id);
+  // 🔐 ADMIN AUTH
+  socket.on("adminAuth", (key) => {
+    if (key !== ADMIN_KEY) {
+      socket.emit("adminAuthFail");
+      return;
     }
 
-    socket.emit("adminAuthSuccess");
-    console.log("🔐 Admin autenticado:", socket.id);
-  } else {
-    socket.emit("adminAuthFail");
-  }
-});
+    players[socket.id] = {
+      id: socket.id,
+      x: 0, y: 1, z: 0,
+      rotation: 0,
+      username: "Admin",
+      isAdmin: true,
+      color: 0xffffff
+    };
 
+    socket.isAdmin = true;
+
+    socket.emit("adminAuthSuccess");
+    io.emit("playerJoined", players[socket.id]);
+
+    console.log("🔐 Admin autenticado:", socket.id);
+  });
+
+  // 🕹 MOVIMENTO ADMIN
+  socket.on("adminMove", (dir) => {
+    if (!socket.isAdmin) return;
+
+    const p = players[socket.id];
+    const speed = 0.3;
+
+    if (dir === "up") p.z -= speed;
+    if (dir === "down") p.z += speed;
+    if (dir === "left") p.x -= speed;
+    if (dir === "right") p.x += speed;
+
+    io.emit("playerMoved", { id: socket.id, x: p.x, y: p.y, z: p.z });
+  });
 
   socket.on("adminMessage", (text) => {
     if (!socket.isAdmin) return;
     io.emit("receiveMessage", {
       id: "ADMIN",
-      username: "🌐 SERVIDOR",
+      username: "🌐 ADMIN",
       text
     });
   });
@@ -96,7 +104,6 @@ socket.on("adminAuth", (key) => {
     blocks = [];
     messages = [];
     io.emit("worldReset");
-    console.log("♻ Mundo resetado");
   });
 
   socket.on("resetPlayers", () => {
@@ -107,7 +114,6 @@ socket.on("adminAuth", (key) => {
       players[id].z = 0;
     }
     io.emit("playersReset");
-    console.log("♻ Players resetados");
   });
 
   socket.on("disconnect", () => {
@@ -116,10 +122,7 @@ socket.on("adminAuth", (key) => {
   });
 });
 
-// ================= PORTA =================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("🚀 Online na porta", PORT);
 });
-
-
