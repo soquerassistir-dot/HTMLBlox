@@ -26,16 +26,27 @@ const BLOCKS_FILE = "./world_blocks.json";
 const MESSAGES_FILE = "./world_messages.json";
 
 function loadJSON(file, fallback) {
-  if (!fs.existsSync(file)) return fallback;
+  if (!fs.existsSync(file)) {
+    // Se o arquivo não existe, cria com array vazio
+    fs.writeFileSync(file, JSON.stringify(fallback, null, 2));
+    return fallback;
+  }
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
+    const data = fs.readFileSync(file, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    console.error(`Erro ao ler ${file}:`, error);
     return fallback;
   }
 }
 
 function saveJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    console.log(`✅ ${file} salvo com ${data.length} itens`);
+  } catch (error) {
+    console.error(`❌ Erro ao salvar ${file}:`, error);
+  }
 }
 
 // ================= ESTADO GLOBAL =================
@@ -64,30 +75,101 @@ io.on("connection", (socket) => {
     isAdmin: false
   };
 
-  socket.emit("init", { id: socket.id, players, blocks, messages });
+  // Enviar dados iniciais para o jogador
+  socket.emit("init", { 
+    id: socket.id, 
+    players, 
+    blocks, 
+    messages 
+  });
+  
+  // Avisar outros jogadores
   socket.broadcast.emit("playerJoined", players[socket.id]);
 
-  // MOVIMENTO NORMAL
+  // MOVIMENTO
   socket.on("update", (data) => {
     if (!players[socket.id]) return;
     Object.assign(players[socket.id], data);
     socket.broadcast.emit("playerMoved", { id: socket.id, ...data });
   });
 
-  // CHAT
+  // CHAT - SALVA NO ARQUIVO
   socket.on("sendMessage", ({ text }) => {
     const msg = {
       id: socket.id,
       username: players[socket.id]?.username || "Player",
-      text
+      text: text,
+      time: new Date().toLocaleTimeString()
     };
+    
     messages.push(msg);
-    if (messages.length > 50) messages.shift();
+    
+    // Limitar histórico a 100 mensagens
+    if (messages.length > 100) messages.shift();
+    
+    // SALVAR NO ARQUIVO
     saveJSON(MESSAGES_FILE, messages);
+    
+    // Enviar para todos
     io.emit("receiveMessage", msg);
   });
 
-  // ================= ADMIN AUTH =================
+  // MUDAR COR
+  socket.on("updateColor", (data) => {
+    if (!players[socket.id]) return;
+    players[socket.id][data.part] = data.color;
+    socket.broadcast.emit("playerColorChanged", {
+      id: socket.id,
+      part: data.part,
+      color: data.color
+    });
+  });
+
+  // MUDAR NOME
+  socket.on("updateUsername", (username) => {
+    if (!players[socket.id]) return;
+    const oldName = players[socket.id].username;
+    players[socket.id].username = username;
+    io.emit("playerRenamed", {
+      id: socket.id,
+      oldName: oldName,
+      username: username
+    });
+  });
+
+  // ANIMAÇÃO
+  socket.on("updateAnimation", (data) => {
+    if (!players[socket.id]) return;
+    players[socket.id].animation = data.animation;
+    players[socket.id].walking = data.walking;
+    players[socket.id].velocityY = data.velocityY;
+    socket.broadcast.emit("playerAnimated", {
+      id: socket.id,
+      ...data
+    });
+  });
+
+  // COLOCAR BLOCO - SALVA NO ARQUIVO
+  socket.on("placeBlock", (blockData) => {
+    const blockWithId = { 
+      ...blockData, 
+      id: Date.now().toString(),
+      playerId: socket.id,
+      timestamp: new Date().toISOString()
+    };
+    
+    blocks.push(blockWithId);
+    
+    // SALVAR NO ARQUIVO
+    saveJSON(BLOCKS_FILE, blocks);
+    
+    // Enviar para todos
+    io.emit("blockPlaced", blockWithId);
+    
+    console.log(`🧱 Bloco colocado por ${socket.id}`, blockWithId);
+  });
+
+  // ================= ADMIN =================
   socket.on("adminAuth", (key) => {
     if (key !== ADMIN_KEY) {
       socket.emit("adminAuthFail");
@@ -111,14 +193,11 @@ io.on("connection", (socket) => {
     };
 
     socket.isAdmin = true;
-
     socket.emit("adminAuthSuccess");
     io.emit("playerJoined", players[socket.id]);
-
     console.log("🔐 Admin autenticado:", socket.id);
   });
 
-  // ================= MOVIMENTO ADMIN (FIX) =================
   socket.on("adminMove", (dir) => {
     if (!socket.isAdmin) return;
     if (!players[socket.id]) return;
@@ -140,24 +219,29 @@ io.on("connection", (socket) => {
     });
   });
 
-  // ================= ADMIN CHAT =================
   socket.on("adminMessage", (text) => {
     if (!socket.isAdmin) return;
     io.emit("receiveMessage", {
       id: "ADMIN",
       username: "🌐 ADMIN",
-      text
+      text: text,
+      time: new Date().toLocaleTimeString()
     });
   });
 
-  // ================= RESET =================
+  // RESETAR MUNDO - LIMPA OS ARQUIVOS
   socket.on("resetWorld", () => {
     if (!socket.isAdmin) return;
+    
     blocks = [];
     messages = [];
+    
+    // SALVAR ARQUIVOS VAZIOS
     saveJSON(BLOCKS_FILE, blocks);
     saveJSON(MESSAGES_FILE, messages);
+    
     io.emit("worldReset");
+    console.log("♻ Mundo resetado por admin");
   });
 
   socket.on("resetPlayers", () => {
@@ -170,14 +254,28 @@ io.on("connection", (socket) => {
     io.emit("playersReset");
   });
 
+  // REMOVER BLOCO (opcional)
+  socket.on("removeBlock", (blockId) => {
+    if (!socket.isAdmin) return;
+    
+    blocks = blocks.filter(block => block.id !== blockId);
+    saveJSON(BLOCKS_FILE, blocks);
+    io.emit("blockRemoved", blockId);
+  });
+
   socket.on("disconnect", () => {
     delete players[socket.id];
     io.emit("playerLeft", socket.id);
+    console.log("❌ Desconectado:", socket.id);
   });
 });
 
 // ================= PORTA =================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log("🚀 Online na porta", PORT);
+  console.log("🚀 Servidor online na porta", PORT);
+  console.log("📁 Blocos salvos em:", BLOCKS_FILE);
+  console.log("💬 Mensagens salvas em:", MESSAGES_FILE);
+  console.log(`📊 ${blocks.length} blocos carregados`);
+  console.log(`💬 ${messages.length} mensagens carregadas`);
 });
